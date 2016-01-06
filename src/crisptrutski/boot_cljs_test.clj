@@ -79,27 +79,45 @@
    c cljs-opts  VAL code "Compiler options for CLJS"
    x exit?          bool "Exit immediately with reporter's exit code."]
   (let [js-env   (or js-env default-js-env)
-        out-file (or out-file default-output)]
+        out-file (or out-file default-output)
+        karma? ((u/r doo.karma/env?) js-env)
+        karma-dir (core/tmp-dir!)
+        karma-on (atom false)]
     (ensure-deps! [:doo])
     ;;((r doo.core/assert-compiler-opts) js-env {:output-to out-file})
+    (when karma?
+      (info "Copying node_modules to a tmp-dir for karma...\n")
+      (doseq [f (file-seq (io/file "node_modules"))
+              :when (.isFile f)]
+        (io/copy f (doto (io/file karma-dir f) (io/make-parents)))))
     (fn [next-task]
       (fn [fileset]
-        (info "Running cljs tests...")
+        (info "Running cljs tests...\n")
         (if-let [path (some->> (core/output-files fileset)
                                (filter (comp #{out-file} :path))
                                (sort-by :time)
                                (last)
                                (core/tmp-file)
                                (.getPath))]
-          (let [dir (.getParentFile (File. path))
-                ;; TODO: could infer :asset-path and :main too
+          (let [;; TODO: could infer :asset-path and :main too
                 ;; TODO: perhaps better to get boot-cljs to share this parsing logic
-                cljs (merge cljs-opts {:output-to path, :output-dir (str/replace path #".js\z" ".out")})
-                opts {:exec-dir dir}
-                {:keys [exit] :as result}
-                ((u/r doo.core/run-script) js-env cljs opts)]
-            (when (pos? exit) (reset! failures? true))
-            (when exit? (System/exit exit))
+                cljs (merge cljs-opts {:output-to path, :output-dir (str/replace path #".js\z" ".out")})]
+            (if karma?
+              (let [opts {:exec-dir karma-dir}]
+                ; Copy all files in fileset to a single dir for Karma
+                (doseq [f (core/input-files fileset)]
+                  (io/copy (core/tmp-file f)
+                           (doto (io/file karma-dir (core/tmp-path f)) (io/make-parents))))
+                  (when (not @karma-on)
+                    ((u/r doo.core/install!) [js-env] cljs opts)
+                    (reset! karma-on true))
+                  ((u/r doo.core/karma-run!) opts))
+              (let [dir (.getParentFile (File. path))
+                    opts {:exec-dir dir}
+                    {:keys [exit] :as result}
+                    ((u/r doo.core/run-script) js-env cljs opts)]
+                (when (pos? exit) (reset! failures? true))
+                (when exit? (System/exit exit))))
             (next-task fileset))
           (do (warn (str "Test script not found: " out-file))
               (when exit? (System/exit 1))))))))
