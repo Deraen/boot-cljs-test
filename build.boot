@@ -9,12 +9,12 @@
 (require '[adzerk.bootlaces :refer :all]
          '[adzerk.boot-test :refer :all])
 
-(def +version+ "0.3.5-SNAPSHOT")
+(def +version+ "0.3.5")
 
 (bootlaces! +version+)
 
 (task-options!
- pom  {:project     'crisptrutski/boot-cljs-test
+ pom  {:project     'metosin/boot-cljs-test
        :version     +version+
        :description "Boot task to run ClojureScript tests."
        :url         "https://github.com/crisptrutski/boot-cljs-test"
